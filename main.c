@@ -52,23 +52,35 @@ void stopwatch_init(stopwatch_t* sw)
     if(sw != NULL) sw->first = sw->last = clock();
 }
 
-void stopwatch_tick(stopwatch_t* sw, const char* message)
+float stopwatch_tick(stopwatch_t* sw, const char* message)
 {
+    float secs = -1.0f;
     if(sw != NULL){
-        float secs = (float)(clock() - sw->last) / (float)CLOCKS_PER_SEC;
+        secs = (float)(clock() - sw->last) / (float)CLOCKS_PER_SEC;
+#ifdef __PERFORMANCE_METRIC__
         if(message != NULL) printf("%s: %f s\n", message, secs);
         else printf("%f s\n", secs);
         sw->last = clock();
+#else
+        UNUSED(message);
+#endif
     }
+    return secs;
 }
 
-void stopwatch_escape(stopwatch_t* sw, const char* message)
+float stopwatch_escape(stopwatch_t* sw, const char* message)
 {
+    float secs = -1.0f;
     if(sw != NULL){
-        float secs = (float)(clock() - sw->first) / (float)CLOCKS_PER_SEC;
+        secs = (float)(clock() - sw->first) / (float)CLOCKS_PER_SEC;
+#ifdef __PERFORMANCE_METRIC__
         if(message != NULL) printf("%s: %f s\n", message, secs);
         else printf("%f s\n", secs);
+#else
+        UNUSED(message);
+#endif
     }
+    return secs;
 }
 /*****************************************************************************/
 

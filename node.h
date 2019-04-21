@@ -22,6 +22,9 @@ typedef int bool;
 #define true  (1)
 #define false (0)
 
+/* This macro are useful to suppress the unsued variable warnings */
+#define UNUSED(VAR) (void)(VAR)
+
 /*
  * Explicitly defines the four different node types.
  *   START: start point
