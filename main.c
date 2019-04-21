@@ -260,7 +260,7 @@ int main(int argc, char *argv[])
         pthread_join(g_cxt.threads[i], NULL);
     }
     pthread_mutex_destroy(&g_cxt.mutexL);
-    pthread_barrier_destory(&g_cxt.barrierInit);
+    /* pthread_barrier_destory(&g_cxt.barrierInit); */
 
     stopwatch_tick(&sw, "Pathfinding");
 
