@@ -1,0 +1,4 @@
+*.o
+.DS_Store
+.desktop.ini
+.vscode/
