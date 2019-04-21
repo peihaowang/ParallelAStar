@@ -1,12 +1,12 @@
 CC=gcc
-CFLAGS=-Wall -Wpedantic -Wextra -Werror -pthread -std=c89
+CFLAGS=-Wall -Wpedantic -Wextra -Werror -pthread -std=c89 -D__PERFORMANCE_METRIC__
 
 TARGET=astar
 
 all: $(TARGET)
 
-$(TARGET): main.c node.o maze.o heap.o compass.h
-	${CC} ${CFLAGS} $^
+$(TARGET): main.c node.o maze.o heap.o
+	${CC} ${CFLAGS} $^ -o astar
 
 maze.o: maze.c maze.h node.o
 	${CC} ${CFLAGS} -c $< -o $@

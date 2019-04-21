@@ -11,6 +11,7 @@
 
 #include <stdlib.h>     /* malloc, free */
 #include <limits.h>     /* INT_MAX */
+
 #include "heap.h"
 
 /*
@@ -19,16 +20,14 @@
  *
  */
 heap_t *
-heap_init (LESS_THAN less)
+heap_init(int channel, LESS_THAN less)
 {
     heap_t *h = malloc(sizeof(heap_t));
+    h->channel = channel;
     h->size = 0;
     h->capacity = INIT_CAPACITY;    /* Initial capacity = 1000. */
     h->nodes = malloc(INIT_CAPACITY * sizeof(node_t *));
     h->nodes[0] = malloc(sizeof(node_t));
-    h->nodes[0]->fs = -INT_MAX;      /* Dummy node at index 0. */
-    h->nodes[0]->x = -INT_MAX;       /* Dummy node at index 0. */
-    h->nodes[0]->y = -INT_MAX;       /* Dummy node at index 0. */
     h->less = less;
     return h;
 }
@@ -61,14 +60,13 @@ heap_insert (heap_t *h, node_t *n)
     }
 
     h->nodes[h->size] = n;
-    while (h->less(n, h->nodes[cur / 2]) && cur >= 2) {
+    while (h->less(n, h->nodes[cur / 2], h->channel) && cur >= 2) {
         h->nodes[cur] = h->nodes[cur / 2];
-        h->nodes[cur]->heap_id = cur;
+        h->nodes[cur]->heap_id[h->channel] = cur;
         cur /= 2;
     }
     h->nodes[cur] = n;
-    n->heap_id = cur;
-
+    n->heap_id[h->channel] = cur;
 }
 
 /*
@@ -84,17 +82,26 @@ heap_extract (heap_t *h)
     int cur, child;
     for (cur = 1; 2 * cur <= h->size; cur = child) {
         child = 2 * cur;
-        if (child < h->size && h->less(h->nodes[child + 1], h->nodes[child]))
+        if (child < h->size && h->less(h->nodes[child + 1], h->nodes[child], h->channel))
             child++;
-        if (h->less(h->nodes[child], last)) {
+        if (h->less(h->nodes[child], last, h->channel)) {
             h->nodes[cur] = h->nodes[child];
-            h->nodes[cur]->heap_id = cur;
+            h->nodes[cur]->heap_id[h->channel] = cur;
         } else
             break;
     }
     h->nodes[cur] = last;
-    last->heap_id = cur;
+    last->heap_id[h->channel] = cur;
     return ret;
+}
+
+/*
+ * Extract the root (i.e. the minimum node) in min heap H.
+ * This doesn't remove the root item from the heap
+ */
+node_t *heap_peek(heap_t *h)
+{
+    return h->nodes[1];
 }
 
 /*
@@ -104,12 +111,12 @@ heap_extract (heap_t *h)
 void
 heap_update (heap_t *h, node_t *n)
 {
-    int cur = n->heap_id;
-    while (h->less(n, h->nodes[cur / 2]) && cur >= 2) {
+    int cur = n->heap_id[h->channel];
+    while (h->less(n, h->nodes[cur / 2], h->channel) && cur >= 2) {
         h->nodes[cur] = h->nodes[cur / 2];
-        h->nodes[cur]->heap_id = cur;
+        h->nodes[cur]->heap_id[h->channel] = cur;
         cur /= 2;
     }
     h->nodes[cur] = n;
-    n->heap_id = cur;
+    n->heap_id[h->channel] = cur;
 }
