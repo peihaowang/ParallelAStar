@@ -65,15 +65,19 @@ typedef struct node_t
 {
     int x;          /* X coordinate, starting from 0. */
     int y;          /* Y coordinate, starting from 0. */
+    mark_t mark;    /* Node type. */
+
     int gs[2];      /* A* g-score. */
     int fs[2];      /* A* f-score. */
-    mark_t mark;    /* Node type. */
+
+    bool opened[2]; /* Has been discovered? */
+    bool closed;    /* Has been closed? */
+
+    /* Parent node along the path. */
+    struct node_t *parent[2];
+    
     /* Position on min heap, used by updating. */
     int heap_id[CHANNEL_NUMBERS];
-    bool opened;    /* Has been discovered? */
-    bool closed;    /* Has been closed? */
-      /* Parent node along the path. */
-    struct node_t *parent[2];
 } node_t;
 
 /* Function prototypes. */

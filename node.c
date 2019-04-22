@@ -36,6 +36,8 @@ int add_extension(int X, int Y)
 node_t *
 node_init (int x, int y, mark_t mark)
 {
+    int i;
+
     node_t *n = malloc(sizeof(node_t));
     n->x = x;
     n->y = y;
@@ -48,10 +50,13 @@ node_init (int x, int y, mark_t mark)
     
     n->mark = mark;
 
-    n->heap_id[0] = 0;
-    n->heap_id[1] = 0;
+    for(i = 0; i < CHANNEL_NUMBERS; i++){
+        n->heap_id[i] = 0;
+    }
 
-    n->opened = false;
+    n->opened[0] = false;
+    n->opened[1] = false;
+
     n->closed = false;
 
     n->parent[0] = NULL;

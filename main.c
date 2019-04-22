@@ -148,22 +148,21 @@ void* search_thread(void *arguments)
 
         if (!cur->closed){
             if (cur->fs[id] < g_cxt.L
-                && _SUB_(_ADD_(cur->gs[id], g_cxt.F[pid]), heuristic(cur, pnba_args->start)) < g_cxt.L
+                && _ADD_(cur->gs[id], _SUB_(g_cxt.F[pid], heuristic(cur, pnba_args->start))) < g_cxt.L
             ){
                 /* Check all the neighbours. Since we are using a block maze, at most
                 four neighbours on the four directions. */
                 for (direction = 0; direction < 4; ++direction) {
                     node_t *n = fetch_neighbour(g_cxt.maze, cur, direction);
-                    if(n == NULL) continue;
-                    if(n->mark == WALL) continue;
-                    if(!n->closed && n->gs[id] > _ADD_(cur->gs[id], 1)){
+                    if(n == NULL || n->mark == WALL || n->closed) continue;
+                    if(n->gs[id] > _ADD_(cur->gs[id], 1)){
                         n->gs[id] = _ADD_(cur->gs[id], 1);
                         n->fs[id] = _ADD_(cur->gs[id], heuristic(cur, pnba_args->goal));
                         n->parent[id] = cur;
 
-                        if (!n->opened) {
+                        if (!n->opened[id]) {
                             /* New node discovered, add into heap. */
-                            n->opened = true;
+                            n->opened[id] = true;
                             heap_insert(openset, n);
                         } else {
                             /* Updated old node. */
@@ -288,6 +287,7 @@ int main(int argc, char *argv[])
         heap_insert(pathset, n);
         n = n->parent[CHANNEL_THREAD_TWO];
     }
+    printf("Path length: %d\n", pathset->size);
     maze_print_steps(maze, pathset);
 
     printf("%d, %d\n", g_cxt.joint->x, g_cxt.joint->y);
