@@ -38,7 +38,8 @@
 #include <time.h>       /* clock */
 #include <limits.h>     /* INT_MAX */
 
-#include <pthread.h>
+#include <pthread.h>    /* Multithreading */
+
 #include "heap.h"
 #include "node.h"
 #include "maze.h"
