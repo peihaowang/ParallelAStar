@@ -1,6 +1,6 @@
 CC=gcc
 #CFLAGS=-Wall -Wpedantic -Wextra -Werror -lpthread -pthread -std=c89
-CFLAGS=-Wall -Wpedantic -Wextra -lpthread -pthread -std=c89
+CFLAGS=-Wall -Wpedantic -Wextra -lpthread -pthread -D__PERFORMANCE_METRIC__ -std=c89
 
 TARGET=astar
 

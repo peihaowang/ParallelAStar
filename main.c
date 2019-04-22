@@ -163,6 +163,7 @@ main (int argc, char *argv[])
         heap_insert(pathset, n);
         n = n->parent;
     }
+    printf("Path length: %d\n", pathset->size);
     maze_print_steps(maze, pathset);
 
     stopwatch_tick(&sw, "Output path");
