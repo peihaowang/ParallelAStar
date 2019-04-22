@@ -53,7 +53,10 @@ node_init (int x, int y, mark_t mark)
 
     n->opened = false;
     n->closed = false;
-    n->parent = NULL;
+
+    n->parent[0] = NULL;
+    n->parent[1] = NULL;
+
     return n;
 }
 

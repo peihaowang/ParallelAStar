@@ -72,7 +72,8 @@ typedef struct node_t
     int heap_id[CHANNEL_NUMBERS];
     bool opened;    /* Has been discovered? */
     bool closed;    /* Has been closed? */
-    struct node_t *parent;  /* Parent node along the path. */
+      /* Parent node along the path. */
+    struct node_t *parent[2];
 } node_t;
 
 /* Function prototypes. */

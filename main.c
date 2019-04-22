@@ -110,6 +110,7 @@ struct pnba_context_t{
 
     int F[2];
     int L;
+    node_t* joint;
 
     /* Threads. Thread objects should be put on static data */
     pthread_t threads[2];
@@ -153,10 +154,12 @@ void* search_thread(void *arguments)
                 for (direction = 0; direction < 4; ++direction) {
                     node_t *n = fetch_neighbour(g_cxt.maze, cur, direction);
                     if(n == NULL) continue;
+                    if(n->mark == WALL) continue;
                     if(!n->closed && n->gs[id] > _ADD_(cur->gs[id], 1)){
                         n->gs[id] = _ADD_(cur->gs[id], 1);
                         n->fs[id] = _ADD_(cur->gs[id], heuristic(cur, pnba_args->goal));
-                        
+                        n->parent[id] = cur;
+
                         if (!n->opened) {
                             /* New node discovered, add into heap. */
                             n->opened = true;
@@ -174,6 +177,7 @@ void* search_thread(void *arguments)
                             pthread_mutex_lock(&g_cxt.mutexL);
                             if (_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L){
                                 g_cxt.L = _ADD_(n->gs[id], n->gs[pid]);
+                                g_cxt.joint = n;
                             }
                             pthread_mutex_unlock(&g_cxt.mutexL);
                         }
@@ -224,6 +228,7 @@ int main(int argc, char *argv[])
 
     g_cxt.maze = maze;
     g_cxt.L = INT_MAX;
+    g_cxt.joint = NULL;
 
     /* Fill out arguments, reverse start and goal for two threads */
 
@@ -264,11 +269,31 @@ int main(int argc, char *argv[])
 
     stopwatch_tick(&sw, "Pathfinding");
 
-    printf("Path length: %d", g_cxt.L);
+    printf("Path length: %d\n", g_cxt.L);
 
     /* Print the steps back. */
-    pathset = heap_init(CHANNEL_SORTING, node_cost_less);
 
+    pathset = heap_init(CHANNEL_SORTING, node_coord_less);
+
+    n = g_cxt.joint;
+    while (n != NULL && n->mark != START) {
+        /*maze_print_step(maze, n);*/
+        heap_insert(pathset, n);
+        n = n->parent[CHANNEL_THREAD_ONE];
+    }
+    n = g_cxt.joint;
+    while (n != NULL && n->mark != GOAL) {
+        /*maze_print_step(maze, n);*/
+        heap_insert(pathset, n);
+        n = n->parent[CHANNEL_THREAD_TWO];
+    }
+    maze_print_steps(maze, pathset);
+
+    printf("%d, %d\n", g_cxt.joint->x, g_cxt.joint->y);
+
+    heap_destroy(pathset);
+
+    #if 0
     n = maze->goal->parent;
     while (n != NULL && n->mark != START) {
         /*maze_print_step(maze, n);*/
@@ -276,11 +301,11 @@ int main(int argc, char *argv[])
         n = n->parent;
     }
     maze_print_steps(maze, pathset);
+    #endif
 
     stopwatch_tick(&sw, "Output path");
 
     /* Free resources and return. */
-    heap_destroy(pathset);
     maze_destroy(maze);
 
     return 0;
