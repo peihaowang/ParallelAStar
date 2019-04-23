@@ -13,21 +13,6 @@
 #include <limits.h>     /* INT_MAX */
 #include "node.h"
 
-/* Extension to add operator, considering operation between infinity */
-int add_extension(int X, int Y)
-{
-    X = _MAX_(X, Y), Y = _MIN_(X, Y);
-    if(X == INT_MAX && Y == -INT_MAX){
-        return 0;
-    }else if(X == INT_MAX){
-        return INT_MAX;
-    }else if(Y == -INT_MAX){
-        return -INT_MAX;
-    }else{
-        return X + Y;
-    }
-}
-
 /*
  * Initialize a node whose position is recorded at (X, Y) with type MARK.
  *   Returns the pointer to the new node.
@@ -44,6 +29,9 @@ node_init (int x, int y, mark_t mark)
 
     n->gs[0] = INT_MAX;
     n->gs[1] = INT_MAX;
+
+    n->hs[0] = -1;
+    n->hs[1] = -1;
 
     n->fs[0] = INT_MAX;
     n->fs[1] = INT_MAX;

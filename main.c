@@ -61,33 +61,41 @@
 #include "compass.h"    /* The heuristic. */
 
 /*****************************************************************************/
+
+#ifdef __PERFORMANCE_METRIC__
+
+#define SW_MAX_COUNT    5
+#define SW_0            0
+#define SW_1            1
+#define SW_2            2        
+#define SW_3            3    
+#define SW_4            4
+
 typedef struct stopwatch_t{
     time_t first;
     time_t last;
 } stopwatch_t;
 
-void stopwatch_init(stopwatch_t* sw)
+static stopwatch_t g_stopwatch[SW_MAX_COUNT];
+
+void __stopwatch_reset(stopwatch_t *sw)
 {
     if(sw != NULL) sw->first = sw->last = clock();
 }
 
-float stopwatch_tick(stopwatch_t* sw, const char* message)
+float __stopwatch_tick(stopwatch_t* sw, const char* message)
 {
     float secs = -1.0f;
     if(sw != NULL){
         secs = (float)(clock() - sw->last) / (float)CLOCKS_PER_SEC;
-#ifdef __PERFORMANCE_METRIC__
         if(message != NULL) printf("%s: %f s\n", message, secs);
         else printf("%f s\n", secs);
         sw->last = clock();
-#else
-        UNUSED(message);
-#endif
     }
     return secs;
 }
 
-float stopwatch_escape(stopwatch_t* sw, const char* message)
+float __stopwatch_escape(stopwatch_t* sw, const char* message)
 {
     float secs = -1.0f;
     if(sw != NULL){
@@ -101,6 +109,19 @@ float stopwatch_escape(stopwatch_t* sw, const char* message)
     }
     return secs;
 }
+
+#define SW_RESET(N)         __stopwatch_reset(&g_stopwatch[N])
+#define SW_TICK(N, S)       __stopwatch_tick(&g_stopwatch[N], S)
+#define SW_ESCAPE(N, S)     __stopwatch_escape(&g_stopwatch[N], S)
+
+#else
+
+#define SW_RESET(N)
+#define SW_TICK(N, S)
+#define SW_ESCAPE(N, S)
+
+#endif
+
 /*****************************************************************************/
 
 /* Local helper functions. */
@@ -119,13 +140,14 @@ typedef struct pnba_arguments_t{
  * Multithread context, including shared information for
  * interaction and parallelism
  */
-struct pnba_context_t{
+static struct pnba_context_t{
+    bool finished;
+
     maze_t* maze;
 
     int F[2];
     int L;
     node_t* joint;
-    bool finished[2];
 
     /* Threads. Thread objects should be put on static data */
     pthread_t threads[2];
@@ -137,6 +159,25 @@ struct pnba_context_t{
     pthread_barrier_t barrierStep;
 
 } g_cxt;
+
+/* Output the cost of path and the joint point of two search process */
+#ifdef __PERFORMANCE_METRIC__
+
+void __print_pathinfo()
+{
+    printf("===== Path Info =====\n");
+    printf("Joint: %d, %d\n", g_cxt.joint->x, g_cxt.joint->y);
+    printf("Cost: %d \n", g_cxt.L);
+    printf("=====================\n");
+}
+
+#define PRT_PATHINFO()      __print_pathinfo()
+
+#else
+
+#define PRT_PATHINFO()
+
+#endif
 
 /*****************************************************************************/
 
@@ -157,24 +198,23 @@ void* search_thread(void *arguments)
 
     /* Loop and repeatedly extracts the node with the highest f-score to
        process on. */
-    while (!g_cxt.finished[id] || !g_cxt.finished[pid]){
-        if (openset->size > 0)
-        {
+    while (!g_cxt.finished) {
+        if(openset->size > 0) {
             int direction;
             node_t *cur = heap_extract(openset);
 
             if (!cur->closed){
                 if (cur->fs[id] < g_cxt.L
-                    && _ADD_(cur->gs[id], _SUB_(g_cxt.F[pid], heuristic(cur, pnba_args->start))) < g_cxt.L
+                    && (cur->gs[id] + g_cxt.F[pid] - heuristic(cur, pnba_args->start)) < g_cxt.L
                 ){
                     /* Check all the neighbours. Since we are using a block maze, at most
                     four neighbours on the four directions. */
                     for (direction = 0; direction < 4; ++direction) {
                         node_t *n = fetch_neighbour(g_cxt.maze, cur, direction);
                         if(n == NULL || n->mark == WALL || n->closed) continue;
-                        if(n->gs[id] > _ADD_(cur->gs[id], 1)){
-                            n->gs[id] = _ADD_(cur->gs[id], 1);
-                            n->fs[id] = _ADD_(n->gs[id], heuristic(n, pnba_args->goal));
+                        if (!n->opened[id] || n->gs[id] > cur->gs[id] + 1) {
+                            n->gs[id] = cur->gs[id] + 1;
+                            n->fs[id] = n->gs[id] + heuristic(n, pnba_args->goal);
                             n->parent[id] = cur;
 
                             if (!n->opened[id]) {
@@ -190,14 +230,16 @@ void* search_thread(void *arguments)
                             * on synchronization. Check before mutex lock can
                             * prevent a large probability on waiting for checking
                             */
-                            if(_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L) {
-                                pthread_mutex_lock(&g_cxt.mutexL);
-                                if (_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L){
-                                    g_cxt.L = _ADD_(n->gs[id], n->gs[pid]);
-                                    g_cxt.joint = n;
-                                    printf("Update: %d \n", g_cxt.L);
+                            if (n->gs[pid] != INT_MAX){
+                                int l = n->gs[id] + n->gs[pid];
+                                if (l < g_cxt.L) {
+                                    pthread_mutex_lock(&g_cxt.mutexL);
+                                    if (l < g_cxt.L) {
+                                        g_cxt.L = l;
+                                        g_cxt.joint = n;
+                                    }
+                                    pthread_mutex_unlock(&g_cxt.mutexL);
                                 }
-                                pthread_mutex_unlock(&g_cxt.mutexL);
                             }
                         }
                     }
@@ -205,16 +247,15 @@ void* search_thread(void *arguments)
 
                 cur->closed = true;
             }
-
-            if(openset->size > 0){
-                g_cxt.F[id] = heap_peek(openset)->fs[id];
-            }else{
-                g_cxt.finished[id] = true;
-            }
         }
 
-        pthread_barrier_wait(&g_cxt.barrierStep);
+        if(openset->size > 0){
+            g_cxt.F[id] = heap_peek(openset)->fs[id];
+        }else{
+            g_cxt.finished = true;
+        }
     }
+
     pthread_exit((void*)0);
 }
 
@@ -239,21 +280,18 @@ int main(int argc, char *argv[])
      */
     pnba_arguments_t arguments[2];
 
-    /* Stopwatch for running time calculation */
-    stopwatch_t sw;
-
     assert(argc == 2);  /* Must have given the source file name. */
 
-    stopwatch_init(&sw);
+    /* Stopwatch for running time calculation */
+    SW_RESET(SW_0);
 
     /* Initializations. */
     maze = maze_init(argv[1]);
 
+    g_cxt.finished = false;
     g_cxt.maze = maze;
     g_cxt.L = INT_MAX;
     g_cxt.joint = NULL;
-    g_cxt.finished[0] = false;
-    g_cxt.finished[1] = false;
 
     /* Fill out arguments, reverse start and goal for two threads */
 
@@ -271,7 +309,7 @@ int main(int argc, char *argv[])
     pthread_barrier_init(&g_cxt.barrierInit, NULL, 2);
     pthread_barrier_init(&g_cxt.barrierStep, NULL, 2);
 
-    stopwatch_tick(&sw, "Initialize maze");
+    SW_TICK(SW_0, "Initialize maze");
 
     /* Create threads to perform the A* pathfinding  */
     pthread_attr_init(&attr);
@@ -294,9 +332,10 @@ int main(int argc, char *argv[])
     pthread_barrier_destroy(&g_cxt.barrierInit);
     pthread_barrier_destroy(&g_cxt.barrierStep);
 
-    stopwatch_tick(&sw, "Pathfinding");
+    SW_TICK(SW_0, "Pathfinding");
 
-    printf("Path length: %d\n", g_cxt.L);
+    /* Output path information */
+    PRT_PATHINFO();
 
     /* Print the steps back. */
 
@@ -314,10 +353,7 @@ int main(int argc, char *argv[])
         heap_insert(pathset, n);
         n = n->parent[CHANNEL_THREAD_TWO];
     }
-    printf("Path length: %d\n", pathset->size);
     maze_print_steps(maze, pathset);
-
-    printf("%d, %d\n", g_cxt.joint->x, g_cxt.joint->y);
 
     heap_destroy(pathset);
 
@@ -331,10 +367,12 @@ int main(int argc, char *argv[])
     maze_print_steps(maze, pathset);
     #endif
 
-    stopwatch_tick(&sw, "Output path");
+    SW_TICK(SW_0, "Output path");
 
     /* Free resources and return. */
     maze_destroy(maze);
+
+    SW_ESCAPE(SW_0, "All time");
 
     return 0;
 }

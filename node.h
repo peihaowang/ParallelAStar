@@ -25,20 +25,6 @@ typedef int bool;
 /* This macro are useful to suppress the unsued variable warnings */
 #define UNUSED(VAR) (void)(VAR)
 
-/* Definition of max and min macro */
-#define _MAX_(X, Y) (X > Y ? X : Y)
-#define _MIN_(X, Y) (X < Y ? X : Y)
-
-
-/* Extension to add operator, considering operation between infinity */
-int add_extension(int X, int Y);
-
-/* Add operator considering infinity as operand */
-#define _ADD_(X, Y) add_extension(X, Y)
-
-/* Subtraction operator considering infinity as operand */
-#define _SUB_(X, Y) add_extension(X, -Y)
-
 /* Define the channel number of each node, i.e. how many heap will
  * hold such nodes.
  */
@@ -68,6 +54,7 @@ typedef struct node_t
     mark_t mark;    /* Node type. */
 
     int gs[2];      /* A* g-score. */
+    int hs[2];      /* A* h-score. */
     int fs[2];      /* A* f-score. */
 
     bool opened[2]; /* Has been discovered? */
