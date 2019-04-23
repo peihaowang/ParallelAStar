@@ -89,7 +89,7 @@ float __stopwatch_tick(stopwatch_t* sw, const char* message)
     if(sw != NULL){
         secs = (float)(clock() - sw->last) / (float)CLOCKS_PER_SEC;
         if(message != NULL) printf("%s: %f s\n", message, secs);
-        else printf("%f s\n", secs);
+        else printf("%fs\n", secs);
         sw->last = clock();
     }
     return secs;
@@ -100,12 +100,8 @@ float __stopwatch_escape(stopwatch_t* sw, const char* message)
     float secs = -1.0f;
     if(sw != NULL){
         secs = (float)(clock() - sw->first) / (float)CLOCKS_PER_SEC;
-#ifdef __PERFORMANCE_METRIC__
-        if(message != NULL) printf("%s: %f s\n", message, secs);
-        else printf("%f s\n", secs);
-#else
-        UNUSED(message);
-#endif
+        if(message != NULL) printf("%s: %fs\n", message, secs);
+        else printf("%fs\n", secs);
     }
     return secs;
 }
@@ -254,6 +250,8 @@ void* search_thread(void *arguments)
             g_cxt.finished = true;
         }
     }
+
+    heap_destroy(openset);
 
     pthread_exit((void*)0);
 }
