@@ -33,6 +33,8 @@
  *
  */
 
+#ifndef __APPLE__
+
 /* With which C standard (C89, C99, C11, etc.) you are compiling your code
  * decides which features are available. pthread_barrier is just an example
  * not present under C89. The following macro selects the version of POSIX, 
@@ -41,12 +43,17 @@
  */
 #define _POSIX_C_SOURCE 200112L
 
+#endif
+
 #include <stdlib.h>     /* NULL */
 #include <assert.h>     /* assert */
 #include <time.h>       /* clock */
 #include <limits.h>     /* INT_MAX */
 
 #include <pthread.h>    /* Multithreading */
+#ifdef __APPLE__
+#include "pthread_barrier.h"
+#endif
 
 #include "heap.h"
 #include "node.h"
@@ -113,13 +120,12 @@ typedef struct pnba_arguments_t{
  * interaction and parallelism
  */
 struct pnba_context_t{
-    bool finished;
-
     maze_t* maze;
 
     int F[2];
     int L;
     node_t* joint;
+    bool finished[2];
 
     /* Threads. Thread objects should be put on static data */
     pthread_t threads[2];
@@ -188,6 +194,7 @@ void* search_thread(void *arguments)
                             if (_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L){
                                 g_cxt.L = _ADD_(n->gs[id], n->gs[pid]);
                                 g_cxt.joint = n;
+                                printf("Update: %d \n", g_cxt.L);
                             }
                             pthread_mutex_unlock(&g_cxt.mutexL);
                         }
@@ -202,7 +209,6 @@ void* search_thread(void *arguments)
             g_cxt.F[id] = heap_peek(openset)->fs[id];
         }
 
-        printf("Reach %d \n", id);
         pthread_barrier_wait(&g_cxt.barrierStep);
     }
     pthread_exit((void*)0);
@@ -242,6 +248,8 @@ int main(int argc, char *argv[])
     g_cxt.maze = maze;
     g_cxt.L = INT_MAX;
     g_cxt.joint = NULL;
+    g_cxt.finished[0] = false;
+    g_cxt.finished[1] = false;
 
     /* Fill out arguments, reverse start and goal for two threads */
 
