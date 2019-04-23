@@ -157,56 +157,60 @@ void* search_thread(void *arguments)
 
     /* Loop and repeatedly extracts the node with the highest f-score to
        process on. */
-    while (openset->size > 0)
-    {
-        int direction;
-        node_t *cur = heap_extract(openset);
+    while (!g_cxt.finished[id] || !g_cxt.finished[pid]){
+        if (openset->size > 0)
+        {
+            int direction;
+            node_t *cur = heap_extract(openset);
 
-        if (!cur->closed){
-            if (cur->fs[id] < g_cxt.L
-                && _ADD_(cur->gs[id], _SUB_(g_cxt.F[pid], heuristic(cur, pnba_args->start))) < g_cxt.L
-            ){
-                /* Check all the neighbours. Since we are using a block maze, at most
-                four neighbours on the four directions. */
-                for (direction = 0; direction < 4; ++direction) {
-                    node_t *n = fetch_neighbour(g_cxt.maze, cur, direction);
-                    if(n == NULL || n->mark == WALL || n->closed) continue;
-                    if(n->gs[id] > _ADD_(cur->gs[id], 1)){
-                        n->gs[id] = _ADD_(cur->gs[id], 1);
-                        n->fs[id] = _ADD_(n->gs[id], heuristic(n, pnba_args->goal));
-                        n->parent[id] = cur;
+            if (!cur->closed){
+                if (cur->fs[id] < g_cxt.L
+                    && _ADD_(cur->gs[id], _SUB_(g_cxt.F[pid], heuristic(cur, pnba_args->start))) < g_cxt.L
+                ){
+                    /* Check all the neighbours. Since we are using a block maze, at most
+                    four neighbours on the four directions. */
+                    for (direction = 0; direction < 4; ++direction) {
+                        node_t *n = fetch_neighbour(g_cxt.maze, cur, direction);
+                        if(n == NULL || n->mark == WALL || n->closed) continue;
+                        if(n->gs[id] > _ADD_(cur->gs[id], 1)){
+                            n->gs[id] = _ADD_(cur->gs[id], 1);
+                            n->fs[id] = _ADD_(n->gs[id], heuristic(n, pnba_args->goal));
+                            n->parent[id] = cur;
 
-                        if (!n->opened[id]) {
-                            /* New node discovered, add into heap. */
-                            n->opened[id] = true;
-                            heap_insert(openset, n);
-                        } else {
-                            /* Updated old node. */
-                            heap_update(openset, n);
-                        }
-
-                        /* There's a design to prevent block due to issues
-                         * on synchronization. Check before mutex lock can
-                         * prevent a large probability on waiting for checking
-                         */
-                        if(_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L) {
-                            pthread_mutex_lock(&g_cxt.mutexL);
-                            if (_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L){
-                                g_cxt.L = _ADD_(n->gs[id], n->gs[pid]);
-                                g_cxt.joint = n;
-                                printf("Update: %d \n", g_cxt.L);
+                            if (!n->opened[id]) {
+                                /* New node discovered, add into heap. */
+                                n->opened[id] = true;
+                                heap_insert(openset, n);
+                            } else {
+                                /* Updated old node. */
+                                heap_update(openset, n);
                             }
-                            pthread_mutex_unlock(&g_cxt.mutexL);
+
+                            /* There's a design to prevent block due to issues
+                            * on synchronization. Check before mutex lock can
+                            * prevent a large probability on waiting for checking
+                            */
+                            if(_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L) {
+                                pthread_mutex_lock(&g_cxt.mutexL);
+                                if (_ADD_(n->gs[id], n->gs[pid]) < g_cxt.L){
+                                    g_cxt.L = _ADD_(n->gs[id], n->gs[pid]);
+                                    g_cxt.joint = n;
+                                    printf("Update: %d \n", g_cxt.L);
+                                }
+                                pthread_mutex_unlock(&g_cxt.mutexL);
+                            }
                         }
                     }
                 }
+
+                cur->closed = true;
             }
 
-            cur->closed = true;
-        }
-
-        if(openset->size > 0){
-            g_cxt.F[id] = heap_peek(openset)->fs[id];
+            if(openset->size > 0){
+                g_cxt.F[id] = heap_peek(openset)->fs[id];
+            }else{
+                g_cxt.finished[id] = true;
+            }
         }
 
         pthread_barrier_wait(&g_cxt.barrierStep);
