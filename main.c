@@ -204,9 +204,8 @@ void* search_thread(void *arguments)
             node_t *cur = heap_extract(openset);
 
             if (!cur->closed){
-                if (cur->fs[id] < g_cxt.L
-                    && (cur->gs[id] + g_cxt.F[pid] - heuristic(cur, pnba_args->start)) < g_cxt.L
-                ){
+                int minL = cur->gs[id] + g_cxt.F[pid] - heuristic(cur, pnba_args->start);
+                if (cur->fs[id] < g_cxt.L && minL < g_cxt.L) {
                     /* Check all the neighbours. Since we are using a block maze, at most
                     four neighbours on the four directions. */
                     for (direction = 0; direction < 4; ++direction) {
@@ -356,17 +355,6 @@ int main(int argc, char *argv[])
     maze_print_steps(maze, pathset);
 
     heap_destroy(pathset);
-
-    #if 0
-    n = maze->goal->parent;
-    while (n != NULL && n->mark != START) {
-        /*maze_print_step(maze, n);*/
-        heap_insert(pathset, n);
-        n = n->parent;
-    }
-    printf("Path length: %d\n", pathset->size);
-    maze_print_steps(maze, pathset);
-    #endif
 
     SW_TICK(SW_0, "Output path");
 
