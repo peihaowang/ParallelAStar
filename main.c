@@ -33,6 +33,14 @@
  *
  */
 
+/* With which C standard (C89, C99, C11, etc.) you are compiling your code
+ * decides which features are available. pthread_barrier is just an example
+ * not present under C89. The following macro selects the version of POSIX, 
+ * or the X/Open specification. Using 200112L for POSIX 2001, which introduced
+ * pthread_barrier in.
+ */
+#define _POSIX_C_SOURCE 200112L
+
 #include <stdlib.h>     /* NULL */
 #include <assert.h>     /* assert */
 #include <time.h>       /* clock */
@@ -119,6 +127,8 @@ struct pnba_context_t{
     pthread_mutex_t mutexL;
     /* Shared barrier lock to synchronize the initialization */
     pthread_barrier_t barrierInit;
+    /* Shared barrier lock to synchronize each step(loop) in pnba */
+    pthread_barrier_t barrierStep;
 
 } g_cxt;
 
@@ -157,7 +167,7 @@ void* search_thread(void *arguments)
                     if(n == NULL || n->mark == WALL || n->closed) continue;
                     if(n->gs[id] > _ADD_(cur->gs[id], 1)){
                         n->gs[id] = _ADD_(cur->gs[id], 1);
-                        n->fs[id] = _ADD_(cur->gs[id], heuristic(cur, pnba_args->goal));
+                        n->fs[id] = _ADD_(n->gs[id], heuristic(n, pnba_args->goal));
                         n->parent[id] = cur;
 
                         if (!n->opened[id]) {
@@ -191,6 +201,9 @@ void* search_thread(void *arguments)
         if(openset->size > 0){
             g_cxt.F[id] = heap_peek(openset)->fs[id];
         }
+
+        printf("Reach %d \n", id);
+        pthread_barrier_wait(&g_cxt.barrierStep);
     }
     pthread_exit((void*)0);
 }
@@ -244,6 +257,7 @@ int main(int argc, char *argv[])
     pthread_mutex_init(&g_cxt.mutexL, NULL);
     /* Initialize barrier for multithreading */
     pthread_barrier_init(&g_cxt.barrierInit, NULL, 2);
+    pthread_barrier_init(&g_cxt.barrierStep, NULL, 2);
 
     stopwatch_tick(&sw, "Initialize maze");
 
@@ -265,7 +279,8 @@ int main(int argc, char *argv[])
         pthread_join(g_cxt.threads[i], NULL);
     }
     pthread_mutex_destroy(&g_cxt.mutexL);
-    /* pthread_barrier_destory(&g_cxt.barrierInit); */
+    pthread_barrier_destroy(&g_cxt.barrierInit);
+    pthread_barrier_destroy(&g_cxt.barrierStep);
 
     stopwatch_tick(&sw, "Pathfinding");
 
