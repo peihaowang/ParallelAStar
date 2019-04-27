@@ -44,4 +44,23 @@ node_t *heap_extract(heap_t *h);
 node_t *heap_peek(heap_t *h);
 void heap_update (heap_t *h, node_t *n);
 
+/*
+ * A special structure of quad-branche heap, which has high parallelity in
+ * insertion and update with multithreading safty, while extraction and
+ * deletion require serial execution.
+ */
+typedef struct quadheap_t
+{
+    int selBranch;
+    heap_t* heaps[4];
+} quadheap_t;
+
+/* Function prototypes. */
+quadheap_t* quadheap_init(int id, LESS_THAN less);
+void quadheap_destroy(quadheap_t* q);
+void quadheap_insert(quadheap_t* q, int branch, node_t* n);
+node_t* quadheap_extract(quadheap_t* q);
+node_t* quadheap_peek(quadheap_t* q);
+void quadheap_update(quadheap_t* q, int branch, node_t* n);
+
 #endif

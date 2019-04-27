@@ -201,6 +201,7 @@ void* search_thread(void *arguments)
 
             if (!cur->closed){
                 int minL = cur->gs[id] + g_cxt.F[pid] - heuristic(cur, pnba_args->start);
+                /* Make sure the next two comparison statements use the same L */
                 int L = g_cxt.L;
                 if (cur->fs[id] < L && minL < L) {
                     /* Check all the neighbours. Since we are using a block maze, at most
