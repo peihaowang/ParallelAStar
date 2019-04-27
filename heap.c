@@ -27,7 +27,7 @@ heap_init(int channel, LESS_THAN less)
     h->size = 0;
     h->capacity = INIT_CAPACITY;    /* Initial capacity = 1000. */
     h->nodes = malloc(INIT_CAPACITY * sizeof(node_t *));
-    h->nodes[0] = malloc(sizeof(node_t));
+    h->nodes[0] = node_init(0, 0, NONE); /* Remember to initial dummy node */
     h->less = less;
     return h;
 }
@@ -39,7 +39,7 @@ heap_init(int channel, LESS_THAN less)
 void
 heap_destroy (heap_t *h)
 {
-    free(h->nodes[0]);
+    node_destroy(h->nodes[0]);
     free(h->nodes);
     free(h);
 }

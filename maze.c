@@ -48,6 +48,7 @@ maze_init (char *filename)
        in from the source file. The maze records all pointers to its nodes
        in an array NODES. */
     m->nodes = malloc(rows * cols * sizeof(node_t *));
+
     rowBuf = malloc(bufSize * sizeof(char));
     for (i = 0; i < rows; ++i) {
         /* Read a whole line at once */
@@ -79,7 +80,7 @@ maze_destroy (maze_t *m)
     int i, j;
     for (i = 0; i < m->rows; ++i)
         for (j = 0; j < m->cols; ++j)
-            free(m->nodes[i * m->cols + j]);
+            node_destroy(m->nodes[i * m->cols + j]);
     free(m->nodes);
     fclose(m->file);
     free(m);
@@ -108,6 +109,7 @@ maze_get_cell (maze_t *m, int x, int y)
     if (x < 0 || x >= m->rows ||    /* Returns NULL if exceeds boundary. */
         y < 0 || y >= m->cols)
         return NULL;
+
     return m->nodes[x * m->cols + y];   /* Notice the row-major order. */
 }
 

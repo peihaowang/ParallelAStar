@@ -201,7 +201,8 @@ void* search_thread(void *arguments)
 
             if (!cur->closed){
                 int minL = cur->gs[id] + g_cxt.F[pid] - heuristic(cur, pnba_args->start);
-                if (cur->fs[id] < g_cxt.L && minL < g_cxt.L) {
+                int L = g_cxt.L;
+                if (cur->fs[id] < L && minL < L) {
                     /* Check all the neighbours. Since we are using a block maze, at most
                     four neighbours on the four directions. */
                     for (direction = 0; direction < 4; ++direction) {
@@ -253,7 +254,7 @@ void* search_thread(void *arguments)
 
     heap_destroy(openset);
 
-    pthread_exit((void*)0);
+    return NULL;
 }
 
 /*
@@ -325,6 +326,7 @@ int main(int argc, char *argv[])
     for(i = 0; i < 2; i++) {
         pthread_join(g_cxt.threads[i], NULL);
     }
+    /* Clean up creations */
     pthread_mutex_destroy(&g_cxt.mutexL);
     pthread_barrier_destroy(&g_cxt.barrierInit);
     pthread_barrier_destroy(&g_cxt.barrierStep);

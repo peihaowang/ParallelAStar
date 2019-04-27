@@ -62,7 +62,7 @@ typedef struct node_t
 
     /* Parent node along the path. */
     struct node_t *parent[2];
-    
+
     /* Position on min heap, used by updating. */
     int heap_id[CHANNEL_NUMBERS];
 } node_t;
