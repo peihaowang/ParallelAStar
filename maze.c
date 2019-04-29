@@ -132,7 +132,7 @@ maze_print_step (maze_t *m, node_t *n)
 }
 
 void
-maze_print_steps (maze_t *m, heap_t *h)
+maze_print_steps (maze_t *m, heap_t *h, char ch)
 {
     /* One character more for EOL */
     const int charsOfLine = m->cols + 1;
@@ -172,7 +172,7 @@ maze_print_steps (maze_t *m, heap_t *h)
             fseek(m->file, -charsOfLine, SEEK_CUR);
         }
         
-        rowArr[n->y] = '*';
+        rowArr[n->y] = ch;
     }
 
     /* Put the last line of the maze */

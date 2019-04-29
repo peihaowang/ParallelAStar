@@ -332,9 +332,6 @@ typedef struct neighbour_context_t{
     bool                    stop;
     node_t*                 cur;
     quadheap_t*             q;
-
-    /* Shared conditional lock to awake exploration */
-    pthread_cond_t          condAwake;
     /* Shared barrier lock to synchronize each step in exploration */
     pthread_barrier_t       barrierExploration;
 } neighbour_context_t;
@@ -351,6 +348,8 @@ typedef struct neighbour_arguments_t{
 
     /* Mutex lock for conditional waiting */
     pthread_mutex_t         mutexCond;
+    /* Shared conditional lock to awake exploration */
+    pthread_cond_t          condAwake;
 
 } neighbour_arguments_t;
 
@@ -366,20 +365,23 @@ void* explore_neighbours(void *arguments)
     int b = args->branch;
     int direction = args->branch;
 
-
     pthread_mutex_lock(&args->mutexCond);
-    pthread_barrier_wait(&cxt->barrierExploration);
 
     while(true){
         node_t *cur, *n;
         /* Wait for task coming in */
-        printf("Start wait: %d, %d\n", id, b);
-        pthread_cond_wait(&cxt->condAwake, &args->mutexCond);
-        printf("Pass %d, %d\n", id, b);
+        /* printf("Start wait: %d, %d\n", id, b); */
+        while(!args->active && !cxt->stop){
+            pthread_cond_wait(&args->condAwake, &args->mutexCond);
+        }
+        /* printf("Pass %d, %d\n", id, b); */
 
-        if(!cxt->stop){
+        /* If stop, quit immediately*/
+        if(cxt->stop){
             break;
         }
+
+        /* Otherwise, exploration is activated */
 
         cur = cxt->cur;
         n = fetch_neighbour(g_cxt.maze, cur, direction);
@@ -389,8 +391,12 @@ void* explore_neighbours(void *arguments)
         /* Restore n to NULL */
         args->neighbour = NULL;
 
+        if(n != NULL && n->gs[pid] != INT_MAX){
+            printf("%d: %d, %d\n", id, n->x, n->y);
+        }
+
         if(n != NULL && n->mark != WALL && !n->closed){
-            if (n->branch[id] == -1 || n->gs[id] > cur->gs[id] + 1) {
+            if (n->branch[id] == -1 || n->gs[id] > cur->gs[id] + 1) {                
                 n->gs[id] = cur->gs[id] + 1;
                 n->fs[id] = n->gs[id] + heuristic(n, cxt->pnba->goal);
                 n->parent[id] = cur;
@@ -416,6 +422,7 @@ void* explore_neighbours(void *arguments)
         /* Inactivate exploration indicating task finished */
         args->active = false;
 
+        /* printf("Exp barrier %d\n", id); */
         pthread_barrier_wait(&cxt->barrierExploration);
     }
 
@@ -450,8 +457,6 @@ void* search_thread(void *arguments)
     cxt.pnba = pnba_args;
     /* Pass min heap */
     cxt.q = openset;
-    /* Initialize conditional lock to awake exploration */
-    pthread_cond_init(&cxt.condAwake, NULL);
     /* Initialize barrier, synchronizing 5 threads */
     pthread_barrier_init(&cxt.barrierExploration, NULL, 5);
 
@@ -461,6 +466,8 @@ void* search_thread(void *arguments)
         neighbour_args[i].cxt = &cxt;
         neighbour_args[i].branch = i;
 
+        /* Initialize conditional lock to awake exploration */
+        pthread_cond_init(&neighbour_args[i].condAwake, NULL);
         /* Initialize the mutex for conditional waiting */
         pthread_mutex_init(&neighbour_args[i].mutexCond, NULL);
     }
@@ -473,9 +480,6 @@ void* search_thread(void *arguments)
         pthread_create(&neighbour_threads[i], &attr, explore_neighbours, (void *)&neighbour_args[i]);
     }
     pthread_attr_destroy(&attr);
-
-    /* Sychronize initialization of exploration */
-    pthread_barrier_wait(&cxt.barrierExploration);
 
     /* Loop and repeatedly extracts the node with the highest f-score to
        process on. */
@@ -497,14 +501,16 @@ void* search_thread(void *arguments)
 
                     for(i = 0; i < 4; i++){
                         /* Activate thread initially */
+                        pthread_mutex_lock(&neighbour_args[i].mutexCond);
                         neighbour_args[i].active = true;
+                        /* printf("Signal: %d, %d\n", id, i); */
+                        pthread_cond_signal(&neighbour_args[i].condAwake);
+                        pthread_mutex_unlock(&neighbour_args[i].mutexCond);
                     }
 
-                    /* Broadcast to awake exploration threads */
-                    printf("Broadcast %d\n", id);
-                    pthread_cond_broadcast(&cxt.condAwake);
                     /* Sychronize the exploration */
                     pthread_barrier_wait(&cxt.barrierExploration);
+                    /* printf("Exp finished %d\n", id); */
 
                     /* Obtain the minimum L value while waiting for
                      * all neighbourhood exploration finished.
@@ -519,9 +525,9 @@ void* search_thread(void *arguments)
                     }
 
                     /* There's a design to prevent block due to issues
-                    * on synchronization. Check before mutex lock can
-                    * prevent a large probability on waiting for checking
-                    */
+                     * on synchronization. Check before mutex lock can
+                     * prevent a large probability on waiting for checking
+                     */
                     if (l < g_cxt.L) {
                         pthread_mutex_lock(&g_cxt.mutexL);
                         if (l < g_cxt.L) {
@@ -545,16 +551,22 @@ void* search_thread(void *arguments)
 
     /* Now send a signal that all neighborhood exploration should stop */
     cxt.stop = true;
-    pthread_cond_broadcast(&cxt.condAwake);
+    for(i = 0; i < 4; i++){
+        /* Activate thread initially */
+        pthread_mutex_lock(&neighbour_args[i].mutexCond);
+        pthread_cond_signal(&neighbour_args[i].condAwake);
+        pthread_mutex_unlock(&neighbour_args[i].mutexCond);
+    }
 
     /* Wait for the their termination */
     for(i = 0; i < 4; i++) {
         pthread_join(neighbour_threads[i], NULL);
+        /* Destroy conditional lock */
+        pthread_cond_destroy(&neighbour_args[i].condAwake);
+        /* Destroy associative mutex */
         pthread_mutex_destroy(&neighbour_args[i].mutexCond);
     }
 
-    /* Destroy conditional lock */
-    pthread_cond_destroy(&cxt.condAwake);
     /* Destroy barrier */
     pthread_barrier_destroy(&cxt.barrierExploration);
 
@@ -725,6 +737,7 @@ int main(int argc, char *argv[])
     SW_TICK(SW_0, "Pathfinding");
 
     /* Output path information */
+    if(g_cxt.joint != NULL) PRT_PATHINFO();
 
     /* Print the steps back. */
 
@@ -742,7 +755,7 @@ int main(int argc, char *argv[])
         heap_insert(pathset, n);
         n = n->parent[CHANNEL_THREAD_TWO];
     }
-    maze_print_steps(maze, pathset);
+    maze_print_steps(maze, pathset, '*');
 
     heap_destroy(pathset);
 

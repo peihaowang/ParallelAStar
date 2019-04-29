@@ -30,7 +30,7 @@ typedef int bool;
 /* Define the channel number of each node, i.e. how many heap will
  * hold such nodes.
  */
-#define CHANNEL_NUMBERS     3
+#define CHANNEL_NUMBERS     5
 #define CHANNEL_THREAD_ONE  0
 #define CHANNEL_THREAD_TWO  1
 #define CHANNEL_SORTING     2
