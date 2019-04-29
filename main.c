@@ -177,6 +177,394 @@ void __print_pathinfo()
 
 /*****************************************************************************/
 
+#ifdef __PARALLEL_NEIGHBOUR_EXP__
+
+/*****************************************************************************/
+
+/*
+ * A special structure of quad-branche heap, which has high parallelity in
+ * insertion and update with multithreading safty, while extraction and
+ * deletion require serial execution.
+ */
+typedef struct quadheap_t
+{
+    int minBranch;
+    int size;
+
+    heap_t* branches[4];
+
+    int channel;
+    LESS_THAN less;     /* Less comparison operator*/
+
+    /* Four mutex lock for each branch */
+    pthread_spinlock_t mutexBranch[4];
+
+} quadheap_t;
+
+/* Function prototypes. */
+/* 
+ * Create 4 heap as the branches.
+ * Initialize minBranch with -1, meaning no minimum branch selected.
+ */
+quadheap_t* quadheap_init(int channel, LESS_THAN less)
+{
+    int i;
+
+    quadheap_t* q = malloc(sizeof(quadheap_t));
+
+    /* No minimum branch selected */
+    q->minBranch = -1;
+    q->size = 0;
+    q->channel = channel;
+    q->less = less;
+
+    /* New four heaps and create their mutex lock */
+    for(i = 0; i < 4; i++){
+        q->branches[i] = heap_init(channel, less);
+        pthread_spin_init(&q->mutexBranch[i], PTHREAD_PROCESS_PRIVATE);
+    }
+
+    return q;
+}
+
+/* Destroy the quadheap 
+ * Four heaps should be free here
+ */
+void quadheap_destroy(quadheap_t* q)
+{
+    int i;
+    for(i = 0; i < 4; i++){
+        heap_destroy(q->branches[i]);
+        pthread_spin_destroy(&q->mutexBranch[i]);
+    }
+    free(q);
+}
+
+/* Insert a node to a specified branch of quadheap.
+ * - The method is thread safe if and only if different threads
+ * use different branch.
+ * - The minBranch might be unset if any root of branches is
+ * changed. For thread synchronization, it will not be updated immediately.
+ */
+void quadheap_insert(quadheap_t* q, int b, node_t* n)
+{
+    int pos = heap_insert(q->branches[b], n);
+    if(pos == 1){   /* If the node is inserted to the root */
+        q->minBranch = -1;
+    }
+    q->size++;
+}
+
+/* Update a node of a specified branch of quadheap.
+ * - The method is thread safe if and only if different threads
+ * use different branch.
+ * - The minBranch might be unset if any root of branches is
+ * changed. For thread synchronization, it will not be updated immediately.
+ */
+void quadheap_update(quadheap_t* q, int b, node_t* n)
+{
+    int pos;
+    pthread_spin_lock(&q->mutexBranch[b]);
+    pos = heap_update(q->branches[b], n);
+    if(pos == 1){   /* If the node is inserted to the root */
+        q->minBranch = -1;
+    }
+    pthread_spin_unlock(&q->mutexBranch[b]);
+}
+
+/* Helper: Return the minimum branch */
+static int _helper_min_branch(quadheap_t* q)
+{
+    int i, min = -1;
+    node_t *cur = NULL, *incoming;
+    for(i = 0; i < 4; i++){
+        if(q->branches[i]->size == 0) continue;
+
+        incoming = heap_peek(q->branches[i]);
+        if(cur == NULL || (cur != NULL && q->less(incoming, cur, q->channel))){
+            cur = incoming;
+            min = i;
+        }
+    }
+    return min;
+}
+
+/* Extract the minimum node from the 4 branches.
+ * - If the minBranch is set, return it immediately.
+ * - If not, compare the roots of 4 branches, and obtain the minimum node.
+ * The minBranch will not be set, for any extraction will remove the root
+ * of a branch, causing unset.
+ */
+node_t* quadheap_extract(quadheap_t* q)
+{
+    int b;
+    node_t* min = NULL;
+    if(q->minBranch >= 0) b = q->minBranch;
+    else b = _helper_min_branch(q);
+    if(b >= 0){
+        min = heap_extract(q->branches[b]);
+
+        q->minBranch = -1;
+        q->size--;
+    }
+
+    return min;
+}
+
+/* Have a peek at the top of each heap. Note that the minimum
+ * branch will be selected at this stage.
+ */
+node_t* quadheap_peek(quadheap_t* q)
+{
+    int b;
+    node_t* min;
+    if(q->minBranch >= 0) b = q->minBranch;
+    else b = _helper_min_branch(q);
+    min = heap_peek(q->branches[b]);
+    q->minBranch = b;
+    return min;
+}
+
+/*****************************************************************************/
+
+typedef struct neighbour_context_t{
+    pnba_arguments_t*       pnba;
+    bool                    stop;
+    node_t*                 cur;
+    quadheap_t*             q;
+
+    /* Shared conditional lock to awake exploration */
+    pthread_cond_t          condAwake;
+    /* Shared barrier lock to synchronize each step in exploration */
+    pthread_barrier_t       barrierExploration;
+} neighbour_context_t;
+
+typedef struct neighbour_arguments_t{
+    bool active;
+
+    neighbour_context_t*    cxt;
+
+    int                     branch;
+
+    node_t*                 neighbour;
+    int                     localL;
+
+    /* Mutex lock for conditional waiting */
+    pthread_mutex_t         mutexCond;
+
+} neighbour_arguments_t;
+
+/*****************************************************************************/
+
+void* explore_neighbours(void *arguments)
+{
+    neighbour_arguments_t* args = (neighbour_arguments_t*)arguments;
+    neighbour_context_t* cxt = args->cxt;
+    quadheap_t* q = cxt->q;
+    /* Note that, here pid means partner id */
+    int id = cxt->pnba->id, pid = 1 - id;
+    int b = args->branch;
+    int direction = args->branch;
+
+
+    pthread_mutex_lock(&args->mutexCond);
+    pthread_barrier_wait(&cxt->barrierExploration);
+
+    while(true){
+        node_t *cur, *n;
+        /* Wait for task coming in */
+        printf("Start wait: %d, %d\n", id, b);
+        pthread_cond_wait(&cxt->condAwake, &args->mutexCond);
+        printf("Pass %d, %d\n", id, b);
+
+        if(!cxt->stop){
+            break;
+        }
+
+        cur = cxt->cur;
+        n = fetch_neighbour(g_cxt.maze, cur, direction);
+
+        /* Restore L to infinity */
+        args->localL = INT_MAX;
+        /* Restore n to NULL */
+        args->neighbour = NULL;
+
+        if(n != NULL && n->mark != WALL && !n->closed){
+            if (n->branch[id] == -1 || n->gs[id] > cur->gs[id] + 1) {
+                n->gs[id] = cur->gs[id] + 1;
+                n->fs[id] = n->gs[id] + heuristic(n, cxt->pnba->goal);
+                n->parent[id] = cur;
+
+                if (n->branch[id] == -1) {
+                    /* New node discovered, add into heap. */
+                    n->branch[id] = b;
+                    quadheap_insert(q, b, n);
+                } else {
+                    /* Updated old node. */
+                    quadheap_update(q, n->branch[id], n);
+                }
+
+                /* Save the local minimum L. This value is candidate of
+                * minimum L in once neighbourhood exploration.
+                */
+                if (n->gs[pid] != INT_MAX){
+                    args->localL = n->gs[id] + n->gs[pid];
+                    args->neighbour = n;
+                }
+            }
+        }
+        /* Inactivate exploration indicating task finished */
+        args->active = false;
+
+        pthread_barrier_wait(&cxt->barrierExploration);
+    }
+
+    pthread_mutex_unlock(&args->mutexCond);
+
+    return NULL;
+}
+
+void* search_thread(void *arguments)
+{
+    int i;
+    quadheap_t *openset;
+    pnba_arguments_t *pnba_args = (pnba_arguments_t*)arguments;
+    /* Note that, here pid means partner id */
+    int id = pnba_args->id, pid = 1 - id;
+
+    /* Context, configurations for neighbourhood exploration */
+    neighbour_context_t cxt;
+    pthread_attr_t attr;
+    pthread_t neighbour_threads[4];
+    neighbour_arguments_t neighbour_args[4];
+
+    openset = quadheap_init(id, node_cost_less);
+    pnba_args->start->gs[id] = 0;
+    pnba_args->start->fs[id] = heuristic(pnba_args->start, pnba_args->goal);
+    g_cxt.F[id] = pnba_args->start->fs[id];
+    quadheap_insert(openset, 0, pnba_args->start);
+
+    /* Keep thread polling for activation */
+    cxt.stop = false;
+    /* Pass pnba arguments */
+    cxt.pnba = pnba_args;
+    /* Pass min heap */
+    cxt.q = openset;
+    /* Initialize conditional lock to awake exploration */
+    pthread_cond_init(&cxt.condAwake, NULL);
+    /* Initialize barrier, synchronizing 5 threads */
+    pthread_barrier_init(&cxt.barrierExploration, NULL, 5);
+
+    /* Basically initialize neighbour arguments */
+    for(i = 0; i < 4; i++){
+        neighbour_args[i].active = false;   /* Inactive by default */
+        neighbour_args[i].cxt = &cxt;
+        neighbour_args[i].branch = i;
+
+        /* Initialize the mutex for conditional waiting */
+        pthread_mutex_init(&neighbour_args[i].mutexCond, NULL);
+    }
+
+    /* Create threads to perform the A* pathfinding  */
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    /* Create and start threads */
+    for(i = 0; i < 4; i++) {
+        pthread_create(&neighbour_threads[i], &attr, explore_neighbours, (void *)&neighbour_args[i]);
+    }
+    pthread_attr_destroy(&attr);
+
+    /* Sychronize initialization of exploration */
+    pthread_barrier_wait(&cxt.barrierExploration);
+
+    /* Loop and repeatedly extracts the node with the highest f-score to
+       process on. */
+    while (!g_cxt.finished) {
+        if(openset->size > 0) {
+            node_t *cur = quadheap_extract(openset);
+
+            if (!cur->closed){
+                int minL = cur->gs[id] + g_cxt.F[pid] - heuristic(cur, pnba_args->start);
+                /* Make sure the next two comparison statements use the same L */
+                int L = g_cxt.L;
+                if (cur->fs[id] < L && minL < L) {
+                    int l;
+                    node_t* n;
+
+                    /* Check all the neighbours. Since we are using a block maze, at most
+                    four neighbours on the four directions. */
+                    cxt.cur = cur;
+
+                    for(i = 0; i < 4; i++){
+                        /* Activate thread initially */
+                        neighbour_args[i].active = true;
+                    }
+
+                    /* Broadcast to awake exploration threads */
+                    printf("Broadcast %d\n", id);
+                    pthread_cond_broadcast(&cxt.condAwake);
+                    /* Sychronize the exploration */
+                    pthread_barrier_wait(&cxt.barrierExploration);
+
+                    /* Obtain the minimum L value while waiting for
+                     * all neighbourhood exploration finished.
+                     */
+                    l = INT_MAX;
+                    for(i = 0; i < 4; i++){
+                        /* while(neighbour_args[i].active); */
+                        if(neighbour_args[i].localL < l){
+                            l = neighbour_args[i].localL;
+                            n = neighbour_args[i].neighbour;
+                        }
+                    }
+
+                    /* There's a design to prevent block due to issues
+                    * on synchronization. Check before mutex lock can
+                    * prevent a large probability on waiting for checking
+                    */
+                    if (l < g_cxt.L) {
+                        pthread_mutex_lock(&g_cxt.mutexL);
+                        if (l < g_cxt.L) {
+                            g_cxt.L = l;
+                            g_cxt.joint = n;
+                        }
+                        pthread_mutex_unlock(&g_cxt.mutexL);
+                    }
+                }
+
+                cur->closed = true;
+            }
+        }
+
+        if(openset->size > 0){
+            g_cxt.F[id] = quadheap_peek(openset)->fs[id];
+        }else{
+            g_cxt.finished = true;
+        }
+    }
+
+    /* Now send a signal that all neighborhood exploration should stop */
+    cxt.stop = true;
+    pthread_cond_broadcast(&cxt.condAwake);
+
+    /* Wait for the their termination */
+    for(i = 0; i < 4; i++) {
+        pthread_join(neighbour_threads[i], NULL);
+        pthread_mutex_destroy(&neighbour_args[i].mutexCond);
+    }
+
+    /* Destroy conditional lock */
+    pthread_cond_destroy(&cxt.condAwake);
+    /* Destroy barrier */
+    pthread_barrier_destroy(&cxt.barrierExploration);
+
+    quadheap_destroy(openset);
+
+    return NULL;
+}
+
+#else
+
 void* search_thread(void *arguments)
 {
     heap_t *openset;
@@ -258,6 +646,8 @@ void* search_thread(void *arguments)
     return NULL;
 }
 
+#endif
+
 /*
  * Entrance point. Time ticking will be performed on the whole procedure,
  *   including I/O. Parallelize and optimize as much as you can.
@@ -335,7 +725,6 @@ int main(int argc, char *argv[])
     SW_TICK(SW_0, "Pathfinding");
 
     /* Output path information */
-    PRT_PATHINFO();
 
     /* Print the steps back. */
 

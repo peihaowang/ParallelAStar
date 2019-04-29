@@ -30,9 +30,6 @@ node_init (int x, int y, mark_t mark)
     n->gs[0] = INT_MAX;
     n->gs[1] = INT_MAX;
 
-    n->hs[0] = -1;
-    n->hs[1] = -1;
-
     n->fs[0] = INT_MAX;
     n->fs[1] = INT_MAX;
     
@@ -42,8 +39,13 @@ node_init (int x, int y, mark_t mark)
         n->heap_id[i] = 0;
     }
 
+#ifndef __PARALLEL_NEIGHBOUR_EXP__
     n->opened[0] = false;
     n->opened[1] = false;
+#else
+    n->branch[0] = -1;
+    n->branch[1] = -1;
+#endif
 
     n->closed = false;
 

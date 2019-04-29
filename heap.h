@@ -12,6 +12,7 @@
 #ifndef _HEAP_H_
 #define _HEAP_H_
 
+#include <pthread.h>
 #include "node.h"
 
 /* Define initial capacity to be 1000. */
@@ -34,16 +35,18 @@ typedef struct heap_t
 
     /* Callback slots */
     LESS_THAN less;     /* Less comparison operator*/
+
 } heap_t;
 
 /* Function prototypes. */
-heap_t *heap_init(int id, LESS_THAN less);
+heap_t *heap_init(int channel, LESS_THAN less);
 void heap_destroy (heap_t *h);
-void heap_insert (heap_t *h, node_t *n);
+int heap_insert (heap_t *h, node_t *n);
+int heap_update (heap_t *h, node_t *n);
 node_t *heap_extract(heap_t *h);
 node_t *heap_peek(heap_t *h);
-void heap_update (heap_t *h, node_t *n);
 
+#if 0
 /*
  * A special structure of quad-branche heap, which has high parallelity in
  * insertion and update with multithreading safty, while extraction and
@@ -51,16 +54,26 @@ void heap_update (heap_t *h, node_t *n);
  */
 typedef struct quadheap_t
 {
-    int selBranch;
-    heap_t* heaps[4];
+    int minBranch;
+    int size;
+
+    heap_t* branches[4];
+
+    int channel;
+    LESS_THAN less;     /* Less comparison operator*/
+
+    /* Four mutex lock for each branch */
+    pthread_spinlock_t mutexBranch[4];
+
 } quadheap_t;
 
 /* Function prototypes. */
-quadheap_t* quadheap_init(int id, LESS_THAN less);
+quadheap_t* quadheap_init(int channel, LESS_THAN less);
 void quadheap_destroy(quadheap_t* q);
-void quadheap_insert(quadheap_t* q, int branch, node_t* n);
+void quadheap_insert(quadheap_t* q, int b, node_t* n);
+void quadheap_update(quadheap_t* q, int b, node_t* n);
 node_t* quadheap_extract(quadheap_t* q);
 node_t* quadheap_peek(quadheap_t* q);
-void quadheap_update(quadheap_t* q, int branch, node_t* n);
+#endif
 
 #endif

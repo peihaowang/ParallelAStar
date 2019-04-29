@@ -12,6 +12,8 @@
 #ifndef _NODE_H_
 #define _NODE_H_
 
+#define __PARALLEL_NEIGHBOUR_EXP__
+
 /*
  * Introduce the "bool" type. Though I really love C/C++, I would still say
  *   it is stupid for not even defining a standard "bool" type in ANSI C
@@ -54,10 +56,13 @@ typedef struct node_t
     mark_t mark;    /* Node type. */
 
     int gs[2];      /* A* g-score. */
-    int hs[2];      /* A* h-score. */
     int fs[2];      /* A* f-score. */
 
+#ifndef __PARALLEL_NEIGHBOUR_EXP__
     bool opened[2]; /* Has been discovered? */
+#else
+    int branch[2];  /* Located in which branch? */
+#endif
     bool closed;    /* Has been closed? */
 
     /* Parent node along the path. */
